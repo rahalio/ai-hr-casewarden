@@ -1,0 +1,1763 @@
+openapi: 3.0.3
+info:
+  title: Casewarden
+  version: 0.1.0
+  description: >-
+    Statutory casework triage and determination record for human services agencies.
+    Casewarden normalises omni-channel intake into a person record, evaluates eligibility
+    against versioned rules with structured reasons, grades caseload on risk of harm with
+    hard safeguarding escalation, and keeps determinations, appeals, cross-agency
+    disclosures and separately governed fraud referrals defensible at tribunal.
+  x-product-slug: ai-hr-casewarden
+  x-source: ai-in-hr/Accenture-ai-in-social-Services-POV-FINAL/
+servers:
+  - url: https://api.example.com
+tags:
+  - name: Intake
+    description: Person records, applications, evidence, and accessibility needs
+  - name: Determinations
+    description: Eligibility and entitlement decisions with reasons and overrides
+  - name: Triage
+    description: Risk of harm grading and caseload allocation
+  - name: Safeguarding
+    description: Threshold escalation and statutory enquiry workflow
+  - name: Interventions
+    description: Proactive life-event support offers and opt-out
+  - name: Appeals
+    description: Reconsideration, appeal bundles, and outcomes
+  - name: InformationSharing
+    description: Gateway-gated cross-agency disclosure and logging
+  - name: FraudRisk
+    description: Separately governed fraud referrals and investigation
+  - name: Governance
+    description: Determination type classification, model inventory, and bias testing
+  - name: Reporting
+    description: Statutory returns, service speed, and digital trust statements
+paths:
+  /v1/persons:
+    post:
+      operationId: createPersonRecord
+      tags: [Intake]
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PersonRecordCreate"
+      responses:
+        "201":
+          description: Person record created with pseudonymous key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopePersonRecord"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    get:
+      operationId: searchPersonRecords
+      tags: [Intake]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: purpose
+          in: query
+          required: true
+          description: Declared access purpose, logged against every read
+          schema:
+            type: string
+            enum: [casework, eligibility, safeguarding, appeal, investigation, governance]
+      responses:
+        "200":
+          description: Person records page, fields filtered by declared purpose
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopePersonRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/PurposeNotPermitted"
+  /v1/persons/{personId}/accessibility-needs:
+    parameters:
+      - $ref: "#/components/parameters/PersonId"
+    put:
+      operationId: recordAccessibilityNeeds
+      tags: [Intake]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessibilityNeedSet"
+      responses:
+        "200":
+          description: Accessibility, advocacy and capacity needs recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAccessibilityNeedSet"
+  /v1/applications:
+    post:
+      operationId: submitApplication
+      tags: [Intake]
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationCreate"
+      responses:
+        "201":
+          description: Application received and queued for assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeApplication"
+    get:
+      operationId: listApplications
+      tags: [Intake]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [received, evidence_pending, assessing, determined, withdrawn]
+      responses:
+        "200":
+          description: Applications page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeApplication"
+  /v1/applications/{applicationId}/assessment:
+    parameters:
+      - $ref: "#/components/parameters/ApplicationId"
+    post:
+      operationId: runEligibilityAssessment
+      tags: [Determinations]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [determinationTypeCode]
+              properties:
+                determinationTypeCode:
+                  type: string
+                ruleVersion:
+                  type: string
+      responses:
+        "200":
+          description: Prepared or issuable determination with structured reasons
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDetermination"
+        "409":
+          description: Determination type is suspended pending model review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/determinations/{determinationId}/issue:
+    parameters:
+      - $ref: "#/components/parameters/DeterminationId"
+    post:
+      operationId: issueDetermination
+      tags: [Determinations]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountableDecisionMakerRef]
+              properties:
+                accountableDecisionMakerRef:
+                  type: string
+                  description: Named human decision maker taking legal responsibility
+                noticeFormat:
+                  type: string
+                  enum: [standard, easy_read, large_print, translated]
+      responses:
+        "200":
+          description: Determination issued with notice and appeal rights
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDetermination"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/determinations/{determinationId}/override:
+    parameters:
+      - $ref: "#/components/parameters/DeterminationId"
+    post:
+      operationId: overrideDetermination
+      tags: [Determinations]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverrideRecordCreate"
+      responses:
+        "200":
+          description: Override recorded and routed as model quality feedback
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeOverrideRecord"
+  /v1/cases/{caseId}/risk-assessment:
+    parameters:
+      - $ref: "#/components/parameters/CaseId"
+    post:
+      operationId: gradeCaseRisk
+      tags: [Triage]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RiskAssessmentCreate"
+      responses:
+        "201":
+          description: Risk grading recorded, prior grading preserved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeRiskAssessment"
+  /v1/caseload:
+    get:
+      operationId: getCaseloadQueue
+      tags: [Triage]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: teamId
+          in: query
+          schema:
+            type: string
+        - name: orderBy
+          in: query
+          schema:
+            type: string
+            enum: [risk_then_deadline, deadline_only, unallocated_first]
+            default: risk_then_deadline
+      responses:
+        "200":
+          description: Caseload ordered by risk of harm and statutory deadline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeCaseAssignment"
+  /v1/case-assignments:
+    post:
+      operationId: assignCase
+      tags: [Triage]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaseAssignmentCreate"
+      responses:
+        "201":
+          description: Case assigned against caseworker capacity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeCaseAssignment"
+  /v1/safeguarding-enquiries:
+    get:
+      operationId: listSafeguardingEnquiries
+      tags: [Safeguarding]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [threshold_met, enquiry_open, multi_agency, concluded, no_further_action]
+      responses:
+        "200":
+          description: Safeguarding enquiries page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeSafeguardingEnquiry"
+    post:
+      operationId: openSafeguardingEnquiry
+      tags: [Safeguarding]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SafeguardingEnquiryCreate"
+      responses:
+        "201":
+          description: Statutory enquiry opened with duty deadlines
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeSafeguardingEnquiry"
+  /v1/intervention-offers:
+    post:
+      operationId: createInterventionOffer
+      tags: [Interventions]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterventionOfferCreate"
+      responses:
+        "201":
+          description: Proactive offer created with recorded prompting signal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeInterventionOffer"
+  /v1/intervention-offers/{offerId}/response:
+    parameters:
+      - $ref: "#/components/parameters/OfferId"
+    post:
+      operationId: respondToInterventionOffer
+      tags: [Interventions]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome:
+                  type: string
+                  enum: [accepted, declined, opted_out_of_proactive_contact]
+                note:
+                  type: string
+      responses:
+        "200":
+          description: Citizen response recorded, opt-out applied to future signals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeInterventionOffer"
+  /v1/appeals:
+    post:
+      operationId: lodgeAppeal
+      tags: [Appeals]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppealCreate"
+      responses:
+        "201":
+          description: Appeal or reconsideration lodged with statutory deadline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAppeal"
+    get:
+      operationId: listAppeals
+      tags: [Appeals]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: stage
+          in: query
+          schema:
+            type: string
+            enum: [reconsideration, tribunal, ombudsman, closed]
+      responses:
+        "200":
+          description: Appeals page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeAppeal"
+  /v1/appeals/{appealId}/bundle:
+    parameters:
+      - $ref: "#/components/parameters/AppealId"
+    get:
+      operationId: getAppealBundle
+      tags: [Appeals]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Assembled bundle of determination, reasons and evidence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeAppealBundle"
+  /v1/disclosure-requests:
+    post:
+      operationId: requestDisclosure
+      tags: [InformationSharing]
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisclosureRequestCreate"
+      responses:
+        "201":
+          description: Disclosure granted within gateway limits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDisclosureRequest"
+        "403":
+          description: No recorded agreement, gateway or purpose supports this disclosure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/persons/{personId}/disclosure-log:
+    parameters:
+      - $ref: "#/components/parameters/PersonId"
+    get:
+      operationId: getDisclosureLog
+      tags: [InformationSharing]
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Field-level disclosure history for subject access and audit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeDisclosureLogEntry"
+  /v1/fraud-referrals:
+    post:
+      operationId: raiseFraudReferral
+      tags: [FraudRisk]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FraudRiskReferralCreate"
+      responses:
+        "201":
+          description: Referral raised for human investigation, no payment action taken
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeFraudRiskReferral"
+  /v1/determination-types:
+    get:
+      operationId: listDeterminationTypes
+      tags: [Governance]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Determination types with classification and thresholds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelopeDeterminationType"
+    post:
+      operationId: classifyDeterminationType
+      tags: [Governance]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeterminationTypeUpsert"
+      responses:
+        "201":
+          description: Determination type classified with overturn threshold
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDeterminationType"
+  /v1/models/{modelId}/bias-tests:
+    parameters:
+      - $ref: "#/components/parameters/ModelId"
+    post:
+      operationId: runBiasTest
+      tags: [Governance]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [characteristics]
+              properties:
+                characteristics:
+                  type: array
+                  items:
+                    type: string
+                    enum: [age_band, sex, disability, ethnicity, nationality, postcode_deprivation_band]
+                minimumGroupSize:
+                  type: integer
+                  default: 20
+      responses:
+        "200":
+          description: Bias test result, may suspend the model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeBiasTest"
+  /v1/reports/service-performance:
+    get:
+      operationId: getServicePerformanceReport
+      tags: [Reporting]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            example: 2026-Q3
+      responses:
+        "200":
+          description: Speed, cost, overturn and caseworker reallocation metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeServicePerformanceReport"
+  /v1/reports/digital-trust-statement:
+    get:
+      operationId: getDigitalTrustStatement
+      tags: [Reporting]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Citizen-facing statement of where automation is used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelopeDigitalTrustStatement"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    PersonId:
+      name: personId
+      in: path
+      required: true
+      schema:
+        type: string
+    ApplicationId:
+      name: applicationId
+      in: path
+      required: true
+      schema:
+        type: string
+    DeterminationId:
+      name: determinationId
+      in: path
+      required: true
+      schema:
+        type: string
+    CaseId:
+      name: caseId
+      in: path
+      required: true
+      schema:
+        type: string
+    AppealId:
+      name: appealId
+      in: path
+      required: true
+      schema:
+        type: string
+    OfferId:
+      name: offerId
+      in: path
+      required: true
+      schema:
+        type: string
+    ModelId:
+      name: modelId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableEntity:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PurposeNotPermitted:
+      description: Declared purpose does not permit this access
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    ResponseMeta:
+      type: object
+      required: [requestId, timestamp]
+      properties:
+        requestId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+          format: double
+        currency:
+          type: string
+          example: GBP
+    LawfulBasisRecord:
+      type: object
+      required: [purpose, basis]
+      properties:
+        purpose:
+          type: string
+          enum: [casework, eligibility, safeguarding, appeal, investigation, statistics]
+        basis:
+          type: string
+          enum: [statutory_duty, public_task, consent, vital_interests, legal_claim]
+        statuteReference:
+          type: string
+        capacityAssessed:
+          type: boolean
+          description: Whether mental capacity was assessed where consent is the basis
+        recordedOn:
+          type: string
+          format: date
+    PersonRecord:
+      type: object
+      required: [id, jurisdiction, recordClass]
+      properties:
+        id:
+          type: string
+          description: Pseudonymous key, national identifier held separately
+        jurisdiction:
+          type: string
+        recordClass:
+          type: string
+          enum: [adult_social_care, childrens_social_care, working_age_benefit, pension_age_benefit]
+        householdRef:
+          type: string
+        lawfulBases:
+          type: array
+          items:
+            $ref: "#/components/schemas/LawfulBasisRecord"
+        openCaseCount:
+          type: integer
+        retentionScheduleCode:
+          type: string
+    PersonRecordCreate:
+      type: object
+      required: [jurisdiction, recordClass, lawfulBases]
+      properties:
+        jurisdiction:
+          type: string
+        recordClass:
+          type: string
+          enum: [adult_social_care, childrens_social_care, working_age_benefit, pension_age_benefit]
+        householdRef:
+          type: string
+        lawfulBases:
+          type: array
+          items:
+            $ref: "#/components/schemas/LawfulBasisRecord"
+    AccessibilityNeedSet:
+      type: object
+      required: [personId, needs]
+      properties:
+        personId:
+          type: string
+        needs:
+          type: array
+          items:
+            type: object
+            required: [type]
+            properties:
+              type:
+                type: string
+                enum: [interpreter, easy_read, large_print, british_sign_language, appointed_advocate, trusted_third_party, no_digital_only_contact]
+              detail:
+                type: string
+        advocateAuthority:
+          type: object
+          properties:
+            advocateRef:
+              type: string
+            authorityType:
+              type: string
+              enum: [appointee, lasting_power_of_attorney, independent_advocate, consent_given]
+            evidenceReference:
+              type: string
+            expiresOn:
+              type: string
+              format: date
+    Circumstance:
+      type: object
+      required: [code, effectiveFrom]
+      properties:
+        code:
+          type: string
+          example: care_need_assessed
+        effectiveFrom:
+          type: string
+          format: date
+        effectiveTo:
+          type: string
+          format: date
+        sourceChannel:
+          type: string
+          enum: [portal, virtual_adviser, webchat, telephone, office, partner_referral]
+    EvidenceItem:
+      type: object
+      required: [id, kind, status]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [identity, income, tenancy, medical, assessment_report, partner_record, declaration]
+        status:
+          type: string
+          enum: [supplied, verified, deficient, waived]
+        documentReference:
+          type: string
+        verifiedOn:
+          type: string
+          format: date
+    Application:
+      type: object
+      required: [id, personId, determinationTypeCode, status, receivedOn]
+      properties:
+        id:
+          type: string
+        personId:
+          type: string
+        determinationTypeCode:
+          type: string
+        status:
+          type: string
+          enum: [received, evidence_pending, assessing, determined, withdrawn]
+        receivedOn:
+          type: string
+          format: date
+        statutoryDeadline:
+          type: string
+          format: date
+        circumstances:
+          type: array
+          items:
+            $ref: "#/components/schemas/Circumstance"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceItem"
+    ApplicationCreate:
+      type: object
+      required: [personId, determinationTypeCode, sourceChannel]
+      properties:
+        personId:
+          type: string
+        determinationTypeCode:
+          type: string
+        sourceChannel:
+          type: string
+          enum: [portal, virtual_adviser, webchat, telephone, office, partner_referral]
+        circumstances:
+          type: array
+          items:
+            $ref: "#/components/schemas/Circumstance"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceItem"
+    DeterminationReason:
+      type: object
+      required: [factCode, effect]
+      properties:
+        factCode:
+          type: string
+        factValue:
+          type: string
+        ruleClause:
+          type: string
+        effect:
+          type: string
+          enum: [supports_entitlement, defeats_entitlement, reduces_amount, requires_further_evidence]
+        plainLanguage:
+          type: string
+    Determination:
+      type: object
+      required: [id, applicationId, determinationTypeCode, ruleVersion, outcome, state]
+      properties:
+        id:
+          type: string
+        applicationId:
+          type: string
+        determinationTypeCode:
+          type: string
+        ruleVersion:
+          type: string
+        modelVersion:
+          type: string
+        outcome:
+          type: string
+          enum: [eligible, not_eligible, partially_eligible, further_evidence_required]
+        awardAmount:
+          $ref: "#/components/schemas/Money"
+        state:
+          type: string
+          enum: [prepared, issued, overridden, superseded, withdrawn]
+        preparedAutomatically:
+          type: boolean
+        accountableDecisionMakerRef:
+          type: string
+        issuedOn:
+          type: string
+          format: date
+        appealRightsExpireOn:
+          type: string
+          format: date
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeterminationReason"
+    OverrideRecord:
+      type: object
+      required: [id, determinationId, overriddenOutcome, reasonCode, overriddenByRef]
+      properties:
+        id:
+          type: string
+        determinationId:
+          type: string
+        overriddenOutcome:
+          type: string
+          enum: [eligible, not_eligible, partially_eligible, further_evidence_required]
+        reasonCode:
+          type: string
+          enum: [facts_incorrect, rule_misapplied, evidence_not_considered, professional_judgement, exceptional_circumstance]
+        narrative:
+          type: string
+        overriddenByRef:
+          type: string
+        routedAsModelFeedback:
+          type: boolean
+    OverrideRecordCreate:
+      type: object
+      required: [overriddenOutcome, reasonCode, narrative]
+      properties:
+        overriddenOutcome:
+          type: string
+          enum: [eligible, not_eligible, partially_eligible, further_evidence_required]
+        reasonCode:
+          type: string
+          enum: [facts_incorrect, rule_misapplied, evidence_not_considered, professional_judgement, exceptional_circumstance]
+        narrative:
+          type: string
+    RiskAssessment:
+      type: object
+      required: [id, caseId, grade, gradedOn, basis]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        grade:
+          type: string
+          enum: [critical, high, moderate, low]
+        harmDomains:
+          type: array
+          items:
+            type: string
+            enum: [neglect, physical_abuse, financial_abuse, self_neglect, exploitation, housing_loss, destitution]
+        entitlementErrorRisk:
+          type: string
+          enum: [high, medium, low]
+        gradedOn:
+          type: string
+          format: date-time
+        basis:
+          type: string
+          enum: [model_assisted, practitioner_judgement, threshold_rule]
+        thresholdCrossed:
+          type: boolean
+        supersedesAssessmentId:
+          type: string
+    RiskAssessmentCreate:
+      type: object
+      required: [grade, basis]
+      properties:
+        grade:
+          type: string
+          enum: [critical, high, moderate, low]
+        harmDomains:
+          type: array
+          items:
+            type: string
+        entitlementErrorRisk:
+          type: string
+          enum: [high, medium, low]
+        basis:
+          type: string
+          enum: [model_assisted, practitioner_judgement, threshold_rule]
+        narrative:
+          type: string
+    CaseworkerCapacity:
+      type: object
+      required: [caseworkerRef, openCases, weightedLoad]
+      properties:
+        caseworkerRef:
+          type: string
+        openCases:
+          type: integer
+        weightedLoad:
+          type: number
+          format: float
+        specialisms:
+          type: array
+          items:
+            type: string
+        availableFrom:
+          type: string
+          format: date
+    CaseAssignment:
+      type: object
+      required: [id, caseId, status]
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        personId:
+          type: string
+        caseworkerRef:
+          type: string
+        status:
+          type: string
+          enum: [unallocated, allocated, reallocated, closed]
+        riskGrade:
+          type: string
+          enum: [critical, high, moderate, low]
+        statutoryDeadline:
+          type: string
+          format: date
+        firstContactDueBy:
+          type: string
+          format: date-time
+        firstContactMadeAt:
+          type: string
+          format: date-time
+    CaseAssignmentCreate:
+      type: object
+      required: [caseId, caseworkerRef]
+      properties:
+        caseId:
+          type: string
+        caseworkerRef:
+          type: string
+        reason:
+          type: string
+    SafeguardingEnquiry:
+      type: object
+      required: [id, personId, status, openedOn]
+      properties:
+        id:
+          type: string
+        personId:
+          type: string
+        caseId:
+          type: string
+        status:
+          type: string
+          enum: [threshold_met, enquiry_open, multi_agency, concluded, no_further_action]
+        openedOn:
+          type: string
+          format: date
+        statutoryStage:
+          type: string
+        dutyDeadline:
+          type: string
+          format: date
+        participatingAgencies:
+          type: array
+          items:
+            type: string
+        outcome:
+          type: string
+          enum: [risk_removed, risk_reduced, risk_remains, not_substantiated]
+        escalatedBypassingScore:
+          type: boolean
+    SafeguardingEnquiryCreate:
+      type: object
+      required: [personId, concernSummary, thresholdRuleCode]
+      properties:
+        personId:
+          type: string
+        caseId:
+          type: string
+        concernSummary:
+          type: string
+        thresholdRuleCode:
+          type: string
+        participatingAgencies:
+          type: array
+          items:
+            type: string
+    LifeEventSignal:
+      type: object
+      required: [code, observedOn, source]
+      properties:
+        code:
+          type: string
+          enum: [bereavement, hospital_discharge, tenancy_change, job_loss, carer_status_change, child_turns_16, benefit_award_ending]
+        observedOn:
+          type: string
+          format: date
+        source:
+          type: string
+        confidence:
+          type: number
+          format: float
+    InterventionOffer:
+      type: object
+      required: [id, personId, offerType, status, createdOn]
+      properties:
+        id:
+          type: string
+        personId:
+          type: string
+        offerType:
+          type: string
+          enum: [benefit_check, care_reassessment, carer_support, employment_support, debt_advice, housing_support]
+        status:
+          type: string
+          enum: [created, sent, accepted, declined, opted_out, expired]
+        createdOn:
+          type: string
+          format: date
+        promptingSignal:
+          $ref: "#/components/schemas/LifeEventSignal"
+        citizenVisibleExplanation:
+          type: string
+        channel:
+          type: string
+          enum: [letter, portal, sms, telephone, home_visit]
+    InterventionOfferCreate:
+      type: object
+      required: [personId, offerType, promptingSignal, citizenVisibleExplanation]
+      properties:
+        personId:
+          type: string
+        offerType:
+          type: string
+          enum: [benefit_check, care_reassessment, carer_support, employment_support, debt_advice, housing_support]
+        promptingSignal:
+          $ref: "#/components/schemas/LifeEventSignal"
+        citizenVisibleExplanation:
+          type: string
+        channel:
+          type: string
+          enum: [letter, portal, sms, telephone, home_visit]
+    Appeal:
+      type: object
+      required: [id, determinationId, stage, lodgedOn]
+      properties:
+        id:
+          type: string
+        determinationId:
+          type: string
+        stage:
+          type: string
+          enum: [reconsideration, tribunal, ombudsman, closed]
+        lodgedOn:
+          type: string
+          format: date
+        statutoryDeadline:
+          type: string
+          format: date
+        groundsSummary:
+          type: string
+        representedBy:
+          type: string
+        outcome:
+          type: string
+          enum: [upheld, overturned, partially_overturned, withdrawn, out_of_time]
+        decidedOn:
+          type: string
+          format: date
+    AppealCreate:
+      type: object
+      required: [determinationId, groundsSummary]
+      properties:
+        determinationId:
+          type: string
+        groundsSummary:
+          type: string
+        representedBy:
+          type: string
+        lateSubmissionReason:
+          type: string
+    AppealBundle:
+      type: object
+      required: [appealId, determination, reasons]
+      properties:
+        appealId:
+          type: string
+        determination:
+          $ref: "#/components/schemas/Determination"
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeterminationReason"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceItem"
+        overrides:
+          type: array
+          items:
+            $ref: "#/components/schemas/OverrideRecord"
+        ruleVersionText:
+          type: string
+        assembledOn:
+          type: string
+          format: date-time
+    InformationSharingAgreement:
+      type: object
+      required: [id, partnerAgency, gateway, permittedFields, status]
+      properties:
+        id:
+          type: string
+        partnerAgency:
+          type: string
+        gateway:
+          type: string
+          description: Statutory or contractual gateway permitting the sharing
+        permittedPurposes:
+          type: array
+          items:
+            type: string
+        permittedFields:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [active, suspended, expired]
+        expiresOn:
+          type: string
+          format: date
+    DisclosureRequestCreate:
+      type: object
+      required: [personId, partnerAgency, purpose, requestedFields]
+      properties:
+        personId:
+          type: string
+        partnerAgency:
+          type: string
+        purpose:
+          type: string
+        requestedFields:
+          type: array
+          items:
+            type: string
+        agreementId:
+          type: string
+        urgentSafeguardingBasis:
+          type: boolean
+    DisclosureRequest:
+      type: object
+      required: [id, personId, partnerAgency, status]
+      properties:
+        id:
+          type: string
+        personId:
+          type: string
+        partnerAgency:
+          type: string
+        status:
+          type: string
+          enum: [granted, partially_granted, refused, pending_approval]
+        grantedFields:
+          type: array
+          items:
+            type: string
+        refusedFields:
+          type: array
+          items:
+            type: string
+        agreementId:
+          type: string
+        approverRef:
+          type: string
+        decidedAt:
+          type: string
+          format: date-time
+    DisclosureLogEntry:
+      type: object
+      required: [id, personId, field, recipient, disclosedAt, purpose]
+      properties:
+        id:
+          type: string
+        personId:
+          type: string
+        field:
+          type: string
+        recipient:
+          type: string
+        disclosedAt:
+          type: string
+          format: date-time
+        purpose:
+          type: string
+        agreementId:
+          type: string
+    FraudRiskReferralCreate:
+      type: object
+      required: [personId, indicators]
+      properties:
+        personId:
+          type: string
+        indicators:
+          type: array
+          items:
+            type: string
+        modelVersion:
+          type: string
+        score:
+          type: number
+          format: float
+    FraudRiskReferral:
+      type: object
+      required: [id, personId, status, raisedOn, paymentActionTaken]
+      properties:
+        id:
+          type: string
+        personId:
+          type: string
+        status:
+          type: string
+          enum: [raised, under_investigation, no_case, case_substantiated, withdrawn]
+        raisedOn:
+          type: string
+          format: date
+        score:
+          type: number
+          format: float
+        modelVersion:
+          type: string
+        investigatorRef:
+          type: string
+        paymentActionTaken:
+          type: boolean
+          description: Always false until a human investigation concludes
+        disclosableExplanation:
+          type: string
+    DeterminationType:
+      type: object
+      required: [code, name, classification, automationAllowed]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        classification:
+          type: string
+          enum: [standard, complex, prohibited_for_automation]
+        automationAllowed:
+          type: boolean
+        currentRuleVersion:
+          type: string
+        overturnRateThreshold:
+          type: number
+          format: float
+        measuredOverturnRate:
+          type: number
+          format: float
+        suspended:
+          type: boolean
+        nextReviewOn:
+          type: string
+          format: date
+    DeterminationTypeUpsert:
+      type: object
+      required: [code, name, classification]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        classification:
+          type: string
+          enum: [standard, complex, prohibited_for_automation]
+        currentRuleVersion:
+          type: string
+        overturnRateThreshold:
+          type: number
+          format: float
+        nextReviewOn:
+          type: string
+          format: date
+    ModelVersion:
+      type: object
+      required: [id, purpose, version, status]
+      properties:
+        id:
+          type: string
+        purpose:
+          type: string
+          enum: [eligibility_assistance, risk_triage, fraud_risk, life_event_detection]
+        version:
+          type: string
+        status:
+          type: string
+          enum: [proposed, approved, live, suspended, withdrawn]
+        approvedBy:
+          type: string
+        approvedOn:
+          type: string
+          format: date
+        monitoringSchedule:
+          type: string
+    BiasTest:
+      type: object
+      required: [modelId, ranOn, outcome, findings]
+      properties:
+        modelId:
+          type: string
+        ranOn:
+          type: string
+          format: date-time
+        outcome:
+          type: string
+          enum: [cleared, disparity_detected, insufficient_group_size]
+        modelSuspended:
+          type: boolean
+        findings:
+          type: array
+          items:
+            type: object
+            properties:
+              characteristic:
+                type: string
+              groupSize:
+                type: integer
+              referralRateRatio:
+                type: number
+                format: float
+              flagged:
+                type: boolean
+        reviewerRef:
+          type: string
+    ServicePerformanceReport:
+      type: object
+      required: [period]
+      properties:
+        period:
+          type: string
+        medianDaysToDetermination:
+          type: number
+          format: float
+        baselineDaysToDetermination:
+          type: number
+          format: float
+        speedImprovementPercent:
+          type: number
+          format: float
+        costPerDetermination:
+          $ref: "#/components/schemas/Money"
+        caseworkerHoursRedirectedToHighRisk:
+          type: number
+          format: double
+        overturnRateAutomatedPath:
+          type: number
+          format: float
+        overturnRateHumanPath:
+          type: number
+          format: float
+        firstContactBreaches:
+          type: integer
+        safeguardingDeadlineBreaches:
+          type: integer
+    DigitalTrustStatement:
+      type: object
+      required: [publishedOn, automationUses]
+      properties:
+        publishedOn:
+          type: string
+          format: date
+        automationUses:
+          type: array
+          items:
+            type: object
+            properties:
+              area:
+                type: string
+              whatItDoes:
+                type: string
+              humanDecisionMaker:
+                type: string
+              howToChallenge:
+                type: string
+        modelInventoryCount:
+          type: integer
+        lastGovernanceReviewOn:
+          type: string
+          format: date
+    DataEnvelopePersonRecord:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/PersonRecord"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeAccessibilityNeedSet:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/AccessibilityNeedSet"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeApplication:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Application"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeDetermination:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Determination"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeOverrideRecord:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/OverrideRecord"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeRiskAssessment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/RiskAssessment"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeCaseAssignment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/CaseAssignment"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeSafeguardingEnquiry:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/SafeguardingEnquiry"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeInterventionOffer:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/InterventionOffer"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeAppeal:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Appeal"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeAppealBundle:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/AppealBundle"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeDisclosureRequest:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/DisclosureRequest"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeFraudRiskReferral:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/FraudRiskReferral"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeDeterminationType:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/DeterminationType"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeBiasTest:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/BiasTest"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeServicePerformanceReport:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/ServicePerformanceReport"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    DataEnvelopeDigitalTrustStatement:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/DigitalTrustStatement"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopePersonRecord:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/PersonRecord"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeApplication:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Application"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeCaseAssignment:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/CaseAssignment"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeSafeguardingEnquiry:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/SafeguardingEnquiry"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeAppeal:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Appeal"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeDisclosureLogEntry:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/DisclosureLogEntry"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ListEnvelopeDeterminationType:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/DeterminationType"
+            nextCursor:
+              type: string
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
